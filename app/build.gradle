@@ -1,0 +1,42 @@
+plugins {
+    id "com.android.application"
+}
+
+android {
+    namespace "com.todoclock"
+    compileSdk 36
+    buildToolsVersion "36.1.0"
+
+    flavorDimensions += "edition"
+
+    productFlavors {
+        free {
+            dimension "edition"
+            buildConfigField "boolean", "IS_PRO", "false"
+            versionNameSuffix "-free"
+        }
+        pro {
+            dimension "edition"
+            applicationIdSuffix ".pro"
+            buildConfigField "boolean", "IS_PRO", "true"
+            versionNameSuffix "-pro"
+        }
+    }
+
+    defaultConfig {
+        applicationId "com.todoclock"
+        minSdk 23
+        targetSdk 28
+        versionCode 1
+        versionName "1.0"
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    buildFeatures {
+        buildConfig = true
+    }
+}
