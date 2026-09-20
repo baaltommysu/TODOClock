@@ -5,6 +5,7 @@ import android.app.AlertDialog;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.res.ColorStateList;
+import android.content.res.Configuration;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -48,7 +49,6 @@ public class MainActivity extends Activity {
     private static final String HANGZHOU_WEATHER = "weather_hangzhou";
     private static final String NANJING_WEATHER = "weather_nanjing";
     private static final long WEATHER_REFRESH_INTERVAL_MS = 10 * 60 * 1000L;
-    private static final int FOCUS_DURATION_SECONDS = 25 * 60;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final ArrayList<Task> taskList = new ArrayList<>();
@@ -61,11 +61,9 @@ public class MainActivity extends Activity {
     private TextView nanjingTemp;
     private TextView nanjingDetails;
     private TextView taskSummary;
-    private TextView focusButton;
     private LinearLayout taskContainer;
     private SharedPreferences preferences;
-    private boolean focusRunning;
-    private int focusRemainingSeconds = FOCUS_DURATION_SECONDS;
+    private int lastOrientation;
 
     private final Runnable ticker = new Runnable() {
         @Override
@@ -89,24 +87,6 @@ public class MainActivity extends Activity {
         }
     };
 
-    private final Runnable focusTicker = new Runnable() {
-        @Override
-        public void run() {
-            if (!focusRunning) {
-                return;
-            }
-            if (focusRemainingSeconds > 0) {
-                focusRemainingSeconds--;
-                updateFocusButton();
-                handler.postDelayed(this, 1000L);
-            } else {
-                focusRunning = false;
-                updateFocusButton();
-                Toast.makeText(MainActivity.this, "专注完成，休息一下吧", Toast.LENGTH_LONG).show();
-            }
-        }
-    };
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -114,6 +94,7 @@ public class MainActivity extends Activity {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         hideSystemUi();
         loadTasks();
+        lastOrientation = getResources().getConfiguration().orientation;
         buildDashboard();
         loadWeather();
         handler.postDelayed(weatherTicker, WEATHER_REFRESH_INTERVAL_MS);
@@ -144,6 +125,17 @@ public class MainActivity extends Activity {
         }
     }
 
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        // configChanges intercepts rotation, so rebuild the dashboard for the new orientation.
+        if (newConfig.orientation != lastOrientation) {
+            lastOrientation = newConfig.orientation;
+            buildDashboard();
+            loadWeather();
+        }
+    }
+
     private void hideSystemUi() {
         getWindow().getDecorView().setSystemUiVisibility(
                 View.SYSTEM_UI_FLAG_FULLSCREEN
@@ -155,6 +147,8 @@ public class MainActivity extends Activity {
     }
 
     private void buildDashboard() {
+        boolean portrait = getResources().getConfiguration().orientation == Configuration.ORIENTATION_PORTRAIT;
+
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(24), dp(18), dp(24), dp(16));
@@ -199,7 +193,7 @@ public class MainActivity extends Activity {
         nanjingColumn.addView(nanjingDetails, new LinearLayout.LayoutParams(-1, dp(22)));
 
         LinearLayout content = new LinearLayout(this);
-        content.setOrientation(LinearLayout.HORIZONTAL);
+        content.setOrientation(portrait ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
         LinearLayout.LayoutParams contentParams = new LinearLayout.LayoutParams(-1, 0, 1f);
         contentParams.setMargins(0, dp(16), 0, 0);
         root.addView(content, contentParams);
@@ -207,7 +201,9 @@ public class MainActivity extends Activity {
         LinearLayout clockPanel = roundedPanel(Color.rgb(26, 32, 36), 22);
         clockPanel.setOrientation(LinearLayout.VERTICAL);
         clockPanel.setPadding(dp(22), dp(20), dp(22), dp(16));
-        content.addView(clockPanel, new LinearLayout.LayoutParams(0, -1, 1f));
+        content.addView(clockPanel, portrait
+                ? new LinearLayout.LayoutParams(-1, 0, 1f)
+                : new LinearLayout.LayoutParams(0, -1, 1f));
 
         LinearLayout clockHeading = new LinearLayout(this);
         clockHeading.setGravity(Gravity.CENTER_VERTICAL);
@@ -230,24 +226,16 @@ public class MainActivity extends Activity {
         clockPanel.addView(clockFooter, new LinearLayout.LayoutParams(-1, dp(26)));
         TextView clockHint = text("每分钟自动翻页  ·  保持屏幕常亮", 11, Color.rgb(142, 154, 163));
         clockFooter.addView(clockHint, new LinearLayout.LayoutParams(0, -1, 1f));
-        if (BuildConfig.IS_PRO) {
-            focusButton = text("开始专注", 11, Color.rgb(183, 228, 199));
-            focusButton.setGravity(Gravity.CENTER);
-            focusButton.setBackground(roundedDrawable(Color.rgb(32, 40, 45), 10));
-            focusButton.setContentDescription("开始或停止25分钟专注计时");
-            focusButton.setOnClickListener(v -> toggleFocus());
-            LinearLayout.LayoutParams focusParams = new LinearLayout.LayoutParams(dp(98), dp(26));
-            focusParams.setMargins(dp(8), 0, dp(10), 0);
-            clockFooter.addView(focusButton, focusParams);
-        }
         TextView clockDot = text("●", 11, Color.rgb(183, 228, 199));
         clockFooter.addView(clockDot, new LinearLayout.LayoutParams(-2, -1));
 
         LinearLayout todoPanel = roundedPanel(Color.rgb(26, 32, 36), 22);
         todoPanel.setOrientation(LinearLayout.VERTICAL);
         todoPanel.setPadding(dp(18), dp(12), dp(18), dp(10));
-        LinearLayout.LayoutParams todoParams = new LinearLayout.LayoutParams(dp(300), -1);
-        todoParams.setMargins(dp(12), 0, 0, 0);
+        LinearLayout.LayoutParams todoParams = portrait
+                ? new LinearLayout.LayoutParams(-1, 0, 1f)
+                : new LinearLayout.LayoutParams(dp(300), -1);
+        todoParams.setMargins(portrait ? 0 : dp(12), portrait ? dp(12) : 0, 0, 0);
         content.addView(todoPanel, todoParams);
 
         LinearLayout todoHeader = new LinearLayout(this);
@@ -424,7 +412,7 @@ public class MainActivity extends Activity {
         if (!BuildConfig.IS_PRO && activeTaskCount() >= 3) {
             new AlertDialog.Builder(this)
                     .setTitle("普通版事项已满")
-                    .setMessage("普通版最多同时保留 3 条未完成事项。专业版支持无限事项，并增加 25 分钟专注计时。")
+                    .setMessage("普通版最多同时保留 3 条未完成事项。专业版支持无限事项。")
                     .setPositiveButton("知道了", null)
                     .show();
             return;
@@ -515,37 +503,6 @@ public class MainActivity extends Activity {
             }
         }
         return active;
-    }
-
-    private void toggleFocus() {
-        if (!BuildConfig.IS_PRO) {
-            return;
-        }
-        if (focusRunning) {
-            focusRunning = false;
-            handler.removeCallbacks(focusTicker);
-            focusRemainingSeconds = FOCUS_DURATION_SECONDS;
-            updateFocusButton();
-        } else {
-            focusRunning = true;
-            focusRemainingSeconds = FOCUS_DURATION_SECONDS;
-            updateFocusButton();
-            handler.removeCallbacks(focusTicker);
-            handler.postDelayed(focusTicker, 1000L);
-        }
-    }
-
-    private void updateFocusButton() {
-        if (focusButton == null) {
-            return;
-        }
-        if (!focusRunning) {
-            focusButton.setText("开始专注");
-            return;
-        }
-        int minutes = focusRemainingSeconds / 60;
-        int seconds = focusRemainingSeconds % 60;
-        focusButton.setText(String.format(Locale.US, "专注 %02d:%02d", minutes, seconds));
     }
 
     private void addTaskRow(Task task) {
